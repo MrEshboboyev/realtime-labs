@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Abstractions/" />
+  <Folder Name="/GoogleProtocols/" />
+  <Folder Name="/IoTAndMessaging/" />
+  <Folder Name="/Native/" />
+  <Folder Name="/WebNative/" />
+</Solution>
