@@ -1,4 +1,4 @@
-﻿namespace RealTime.Native.TcpServer.Protocols.Serialization;
+﻿namespace RealTime.Native.Common.Protocols.Serialization;
 
 public interface ISerializer
 {

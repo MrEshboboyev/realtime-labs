@@ -1,10 +1,10 @@
-﻿using RealTime.Native.TcpServer.Core;
-using RealTime.Native.TcpServer.Infrastructure;
-using RealTime.Native.TcpServer.Protocols.Framing;
-using RealTime.Native.TcpServer.Protocols.Serialization;
+﻿using RealTime.Native.Common.Infrastructure;
+using RealTime.Native.Common.Protocols.Framing;
+using RealTime.Native.Common.Protocols.Serialization;
+using RealTime.Native.TcpServer.Core;
 
 // 1. Infratuzilmani sozlash
-var logger = new Logger();
+var logger = new SharedLogger("Server");
 var options = new ServerOptions
 {
     Port = 5000,

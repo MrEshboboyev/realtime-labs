@@ -1,7 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 
-namespace RealTime.Native.TcpServer.Protocols.Serialization;
+namespace RealTime.Native.Common.Protocols.Serialization;
 
 public class JsonSerializerImpl : ISerializer
 {

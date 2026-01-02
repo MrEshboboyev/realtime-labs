@@ -1,6 +1,6 @@
-﻿using System.Net.Sockets;
+﻿using RealTime.Native.Common.Models;
 using RealTime.Native.TcpServer.Abstractions;
-using RealTime.Native.TcpServer.Models;
+using System.Net.Sockets;
 
 namespace RealTime.Native.TcpServer.Core;
 

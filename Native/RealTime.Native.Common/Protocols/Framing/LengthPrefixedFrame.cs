@@ -1,6 +1,6 @@
 ﻿using System.Collections.Concurrent;
 
-namespace RealTime.Native.TcpServer.Protocols.Framing;
+namespace RealTime.Native.Common.Protocols.Framing;
 
 public class LengthPrefixedFrame : IFrameHandler
 {

@@ -1,4 +1,4 @@
-﻿namespace RealTime.Native.TcpServer.Protocols.Framing;
+﻿namespace RealTime.Native.Common.Protocols.Framing;
 
 public interface IFrameHandler
 {

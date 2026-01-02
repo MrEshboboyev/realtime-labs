@@ -1,5 +1,4 @@
-﻿using RealTime.Native.TcpServer.Events;
-using RealTime.Native.TcpServer.Models;
+﻿using RealTime.Native.Common.Models;
 
 namespace RealTime.Native.TcpServer.Abstractions;
 

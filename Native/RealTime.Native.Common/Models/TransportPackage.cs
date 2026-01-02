@@ -1,4 +1,4 @@
-﻿namespace RealTime.Native.TcpServer.Models;
+﻿namespace RealTime.Native.Common.Models;
 
 /// <summary>
 /// Tarmoqdan kelgan xom ma'lumot va uning konteksti
