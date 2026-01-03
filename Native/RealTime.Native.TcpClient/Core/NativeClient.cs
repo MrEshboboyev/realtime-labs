@@ -9,6 +9,9 @@ using System.Net.Sockets;
 
 namespace RealTime.Native.TcpClient.Core;
 
+/// <summary>
+/// Implements a TCP client for connecting to the server
+/// </summary>
 public class NativeClient : ITcpClient
 {
     private System.Net.Sockets.TcpClient? _client;
@@ -18,50 +21,97 @@ public class NativeClient : ITcpClient
     private readonly ISerializer _serializer;
     private CancellationTokenSource? _cts;
     private readonly ReconnectionManager _reconnectionManager;
-    private readonly SharedLogger _logger = new("CLIENT");
+    private readonly SharedLogger _logger;
+    
+    private readonly object _stateLock = new object();
+    private bool _disposed = false;
 
     public Guid Id { get; private set; } = Guid.NewGuid();
     public bool IsConnected => _client?.Connected ?? false;
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
 
-    // Voqealar
+    // Events
     public event EventHandler? OnConnected;
     public event EventHandler? OnDisconnected;
     public event EventHandler<OnMessageEventArgs>? OnMessageReceived;
     public event EventHandler<OnErrorEventArgs>? OnError;
 
-    public NativeClient(ClientOptions options)
+    public NativeClient(ClientOptions options, IFrameHandler? frameHandler = null, ISerializer? serializer = null, SharedLogger? logger = null)
     {
         _options = options;
-        _frameHandler = new LengthPrefixedFrame();
-        _serializer = new BinarySerializer();
+        _frameHandler = frameHandler ?? new LengthPrefixedFrame(logger);
+        _serializer = serializer ?? new BinarySerializer(logger);
+        _logger = logger ?? new SharedLogger("CLIENT");
+        
+        if (!_options.Validate())
+        {
+            throw new ArgumentException("Invalid client options provided");
+        }
 
-        // Manager o'zini eventga bog'lab oladi
+        // Manager subscribes to its own events
         _reconnectionManager = new ReconnectionManager(this, _options, _logger);
     }
 
     public async Task ConnectAsync(CancellationToken ct = default)
     {
-        if (IsConnected) return;
+        if (_disposed)
+        {
+            _logger.Log(LogLevel.Warning, "Attempted to connect on disposed client");
+            return;
+        }
+        
+        lock (_stateLock)
+        {
+            if (IsConnected) return;
+        }
 
         try
         {
             _client = new System.Net.Sockets.TcpClient();
+            _client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
             _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-            // 1. Serverga ulanish
-            await _client.ConnectAsync(_options.Host, _options.Port, _cts.Token);
+            // Connect to server with timeout
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
+            using var delayCts = new CancellationTokenSource(_options.ConnectionTimeout);
+            
+            var connectTask = Task.Run(() => _client.Connect(_options.Host, _options.Port));
+            var timeoutTask = Task.Delay(_options.ConnectionTimeout, delayCts.Token);
+            
+            var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+            
+            if (completedTask == timeoutTask)
+            {
+                throw new TimeoutException($"Connection to {_options.Host}:{_options.Port} timed out after {_options.ConnectionTimeout}");
+            }
+            
+            // If timeout task completed, it means the connection task didn't complete in time
+            if (delayCts.IsCancellationRequested && !connectTask.IsCompleted)
+            {
+                throw new TimeoutException($"Connection to {_options.Host}:{_options.Port} timed out after {_options.ConnectionTimeout}");
+            }
+            
+            await connectTask; // This will throw if the connection failed
+            
             _stream = _client.GetStream();
-            State = ConnectionState.Connected;
+            
+            lock (_stateLock)
+            {
+                State = ConnectionState.Connected;
+            }
 
             OnConnected?.Invoke(this, EventArgs.Empty);
 
-            // 2. Xabarlarni qabul qilish tsiklini (Background Loop) boshlash
+            // Start the message receive loop
             _ = Task.Run(() => StartReceiveLoopAsync(_cts.Token), _cts.Token);
         }
         catch (Exception ex)
         {
-            State = ConnectionState.Disconnected;
+            lock (_stateLock)
+            {
+                State = ConnectionState.Disconnected;
+            }
+            _logger.Log(LogLevel.Error, "Connection failed", ex);
             OnError?.Invoke(this, new OnErrorEventArgs(ex, "Connect"));
             throw;
         }
@@ -73,12 +123,12 @@ public class NativeClient : ITcpClient
 
         try
         {
-            while (!ct.IsCancellationRequested && IsConnected)
+            while (!ct.IsCancellationRequested && IsConnected && !_disposed)
             {
-                int bytesRead = await _stream!.ReadAsync(buffer, 0, buffer.Length, ct);
+                int bytesRead = await _stream!.ReadAsync(buffer, 0, _options.ReceiveBufferSize, ct);
                 if (bytesRead == 0) break;
 
-                // Framing orqali xabarlarni ajratish
+                // Get only the read portion of the buffer
                 var receivedSegment = new byte[bytesRead];
                 Buffer.BlockCopy(buffer, 0, receivedSegment, 0, bytesRead);
 
@@ -90,21 +140,30 @@ public class NativeClient : ITcpClient
                 }
             }
         }
-        catch (Exception ex) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!ct.IsCancellationRequested && !_disposed)
         {
+            _logger.Log(LogLevel.Error, "Error in receive loop", ex);
             OnError?.Invoke(this, new OnErrorEventArgs(ex, "ReceiveLoop"));
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
-            await DisconnectAsync();
+            ArrayPool<byte>.Shared.Return(buffer, true); // Clear buffer to prevent data leaks
+            if (!_disposed)
+            {
+                await DisconnectAsync();
+            }
         }
     }
 
     public async Task SendAsync<T>(T message, CancellationToken ct = default)
     {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(NativeClient));
+        }
+        
         if (!IsConnected || _stream == null)
-            throw new InvalidOperationException("Serverga ulanmagan!");
+            throw new InvalidOperationException("Not connected to server!");
 
         try
         {
@@ -117,26 +176,41 @@ public class NativeClient : ITcpClient
         }
         catch (Exception ex)
         {
+            _logger.Log(LogLevel.Error, "Error sending message", ex);
             OnError?.Invoke(this, new OnErrorEventArgs(ex, "Send"));
             throw;
         }
     }
 
-    public Task DisconnectAsync()
+    public async Task DisconnectAsync()
     {
-        if (State == ConnectionState.Disconnected) return Task.CompletedTask;
+        if (_disposed) return;
+        
+        lock (_stateLock)
+        {
+            if (State == ConnectionState.Disconnected) return;
+            State = ConnectionState.Disconnecting;
+        }
 
-        State = ConnectionState.Disconnected;
         _cts?.Cancel();
         _stream?.Dispose();
         _client?.Close();
+        
+        lock (_stateLock)
+        {
+            State = ConnectionState.Disconnected;
+        }
 
         OnDisconnected?.Invoke(this, EventArgs.Empty);
-        return Task.CompletedTask;
+        await Task.CompletedTask;
     }
 
     public void Dispose()
     {
+        if (_disposed) return;
+        
+        _disposed = true;
+        
         DisconnectAsync().GetAwaiter().GetResult();
         _cts?.Dispose();
         _client?.Dispose();

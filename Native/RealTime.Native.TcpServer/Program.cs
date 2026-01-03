@@ -1,65 +1,74 @@
-﻿using RealTime.Native.Common.Infrastructure;
+﻿using Microsoft.Extensions.DependencyInjection;
+using RealTime.Native.Common.Infrastructure;
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Framing;
 using RealTime.Native.Common.Protocols.Serialization;
+using RealTime.Native.Common.Services;
+using RealTime.Native.TcpServer.Abstractions;
 using RealTime.Native.TcpServer.Core;
+using RealTime.Native.TcpServer.Services;
 
-// 1. Infratuzilmani sozlash
-var logger = new SharedLogger("SERVER");
-var options = new ServerOptions
-{
-    Port = 5000,
-    MaxConnections = 100,
-    ClientTimeout = TimeSpan.FromMinutes(5)
-};
+// 1. Dependency Injection container setup
+var services = new ServiceCollection();
 
-// 2. Server va uning qurollarini yaratish
-var server = new TcpServerListener(options);
-var binarySerializer = new BinarySerializer();
-var frameHandler = new LengthPrefixedFrame();
+// 2. Register services
+services.AddCommonServices("SERVER")
+    .AddServerServices(new ServerOptions
+    {
+        Port = 5000,
+        MaxConnections = 100,
+        ClientTimeout = TimeSpan.FromMinutes(5)
+    });
 
-logger.Log(LogLevel.Info, "Server komponentlari yuklanmoqda...");
+var serviceProvider = services.BuildServiceProvider();
 
-// 3. Voqealarga (Events) obuna bo'lish
+// 3. Get required services
+var logger = serviceProvider.GetRequiredService<SharedLogger>();
+var server = serviceProvider.GetRequiredService<IServer>();
+var binarySerializer = serviceProvider.GetRequiredService<ISerializer>();
+var frameHandler = serviceProvider.GetRequiredService<IFrameHandler>();
+var connectionManager = serviceProvider.GetRequiredService<ConnectionManager>();
 
-// Mijoz ulanganda
+logger.Log(LogLevel.Info, "Server components loaded...");
+
+// 4. Subscribe to events
+
+// When client connects
 server.ClientConnected += (s, connection) =>
 {
     logger.Log(LogLevel.Info, $"[CONNECTED] ID: {connection.Id} | IP: {connection.Client.Client.RemoteEndPoint}");
 };
 
-// Mijoz uzilganda
+// When client disconnects
 server.ClientDisconnected += (s, connectionId) =>
 {
     logger.Log(LogLevel.Warning, $"[DISCONNECTED] ID: {connectionId}");
 };
 
-// Xabar kelganda (Xonalar va Buyruqlar mantiqi)
+// When message is received (Room and Command logic)
 server.MessageReceived += async (s, package) =>
 {
     try
     {
-        // 1. Paketni CommandPackage sifatida deserializatsiya qilish
+        // 1. Deserialize package as CommandPackage
         var command = binarySerializer.Deserialize<CommandPackage>(package.Data.ToArray());
         if (command == null) return;
-
-        var manager = server.GetConnectionManager();
 
         switch (command.Type)
         {
             case CommandType.JoinRoom:
-                manager.JoinRoom(command.RoomId, package.ConnectionId);
-                logger.Log(LogLevel.Info, $"[ROOM] {package.ConnectionId.ToString()[..4]} -> '{command.RoomId}' xonasiga kirdi.");
+                connectionManager.JoinRoom(command.RoomId, package.ConnectionId);
+                logger.Log(LogLevel.Info, $"[ROOM] {package.ConnectionId.ToString()[..4]} -> '{command.RoomId}' room joined.");
 
-                // Tasdiqlash xabari (faqat kiritgan odamga)
-                var welcome = binarySerializer.Serialize(new CommandPackage(CommandType.SystemAlert, command.RoomId, $"Siz {command.RoomId} xonasiga kirdingiz!"));
-                await manager.GetConnection(package.ConnectionId)?.SendAsync(frameHandler.Wrap(welcome))!;
+                // Confirmation message (only to the joining user)
+                var welcome = binarySerializer.Serialize(new CommandPackage(CommandType.SystemAlert, command.RoomId, $"You have joined room {command.RoomId}!"));
+                await connectionManager.GetConnection(package.ConnectionId)?.SendAsync(frameHandler.Wrap(welcome))!;
                 break;
 
             case CommandType.SendMessage:
                 logger.Log(LogLevel.Info, $"[MSG] Room: {command.RoomId} | From: {package.ConnectionId.ToString()[..4]} : {command.Content}");
 
-                // Xabarni faqat shu xonadagi mijozlarga yuborish
+                // Send message only to clients in the same room
                 byte[] responseData = binarySerializer.Serialize(
                     command with 
                     { 
@@ -67,10 +76,10 @@ server.MessageReceived += async (s, package) =>
                     });
                 byte[] framedResponse = frameHandler.Wrap(responseData);
 
-                var roomClients = manager.GetRoomClients(command.RoomId);
+                var roomClients = connectionManager.GetRoomClients(command.RoomId);
                 foreach (var conn in roomClients)
                 {
-                    // Xabarni yuborgan odamning o'ziga qaytarmaslik (ixtiyoriy)
+                    // Don't send back to the sender (optional)
                     if (conn.Id != package.ConnectionId)
                         await conn.SendAsync(framedResponse);
                 }
@@ -79,38 +88,42 @@ server.MessageReceived += async (s, package) =>
     }
     catch (Exception ex)
     {
-        logger.Log(LogLevel.Error, "Buyruqni bajarishda xatolik", ex);
+        logger.Log(LogLevel.Error, "Error processing command", ex);
     }
 };
 
-// 4. Serverni ishga tushirish
+// 5. Start the server
 var cts = new CancellationTokenSource();
 
 Console.CancelKeyPress += (s, e) =>
 {
-    e.Cancel = true; // Control+C ni ushlab qolamiz
-    logger.Log(LogLevel.Critical, "Server to'xtatish signali qabul qilindi...");
-    cts.Cancel(); // Barcha jarayonlarga "to'xta" signalini yuboramiz
+    e.Cancel = true; // Catch Control+C
+    logger.Log(LogLevel.Critical, "Server shutdown signal received...");
+    cts.Cancel(); // Send "stop" signal to all processes
 };
 
 try
 {
-    logger.Log(LogLevel.Info, $"TCP Server {options.Port}-portda ishga tushmoqda...");
+    logger.Log(LogLevel.Info, $"TCP Server starting on port 5000...");
 
-    // Serverni ishga tushiramiz va uning tugashini yoki cancel bo'lishini kutamiz
-    await server.StartAsync(options.Port, cts.Token);
+    // Start the server and wait for it to finish or be cancelled
+    await server.StartAsync(5000, cts.Token);
 }
 catch (OperationCanceledException)
 {
-    // Bu kutilgan holat, xato emas
-    logger.Log(LogLevel.Info, "Server cancel orqali to'xtatildi.");
+    // This is expected, not an error
+    logger.Log(LogLevel.Info, "Server stopped via cancellation.");
 }
 catch (Exception ex)
 {
-    logger.Log(LogLevel.Critical, "Server kutilmaganda to'xtadi", ex);
+    logger.Log(LogLevel.Critical, "Server unexpectedly stopped", ex);
 }
 finally
 {
-    await server.StopAsync();
-    logger.Log(LogLevel.Info, "Dastur yakunlandi.");
+    if (server is IAsyncDisposable asyncDisposable)
+        await asyncDisposable.DisposeAsync();
+    else if (server is IDisposable disposable)
+        disposable.Dispose();
+    
+    logger.Log(LogLevel.Info, "Application ended.");
 }

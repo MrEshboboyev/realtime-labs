@@ -3,6 +3,9 @@ using RealTime.Native.TcpClient.Abstractions;
 
 namespace RealTime.Native.TcpClient.Core;
 
+/// <summary>
+/// Manages automatic reconnection logic for the TCP client
+/// </summary>
 internal class ReconnectionManager
 {
     private readonly ITcpClient _client;
@@ -10,6 +13,7 @@ internal class ReconnectionManager
     private readonly SharedLogger _logger;
     private int _retryCount = 0;
     private bool _isReconnecting = false;
+    private readonly Lock _lock = new();
 
     public ReconnectionManager(ITcpClient client, ClientOptions options, SharedLogger logger)
     {
@@ -17,47 +21,68 @@ internal class ReconnectionManager
         _options = options;
         _logger = logger;
 
-        // Mijoz uzilganda avtomatik ishga tushishi uchun eventga bog'laymiz
+        // Subscribe to disconnect event to trigger reconnection
         _client.OnDisconnected += async (s, e) => await HandleDisconnectAsync();
     }
 
     private async Task HandleDisconnectAsync()
     {
         if (!_options.AutoReconnect || _isReconnecting) return;
+        
+        lock (_lock)
+        {
+            if (_isReconnecting) return; // Double-check to prevent race conditions
+            _isReconnecting = true;
+        }
 
-        _isReconnecting = true;
-        _retryCount = 0;
-
-        _logger.Log(LogLevel.Warning, "Ulanish uzildi. Avtomatik qayta ulanish boshlanmoqda...");
+        _logger.Log(LogLevel.Warning, "Connection lost. Starting automatic reconnection...");
 
         while (_retryCount < _options.MaxRetryAttempts && !_client.IsConnected)
         {
             _retryCount++;
 
-            // Kutish vaqti: Exponential Backoff (2s, 4s, 8s...)
-            int delaySeconds = (int)Math.Pow(_options.ReconnectDelay.TotalSeconds, _retryCount);
-            _logger.Log(LogLevel.Info, $"Qayta ulanish urinishi {_retryCount}/{_options.MaxRetryAttempts}. Kutish: {delaySeconds}s");
-
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+            // Exponential backoff: 2s, 4s, 8s, 16s, etc.
+            double delaySeconds = Math.Pow(2, _retryCount) * _options.ReconnectDelay.TotalSeconds;
+            _logger.Log(LogLevel.Info, $"Reconnection attempt {_retryCount}/{_options.MaxRetryAttempts}. Waiting: {delaySeconds}s");
 
             try
             {
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+
                 await _client.ConnectAsync();
                 if (_client.IsConnected)
                 {
-                    _logger.Log(LogLevel.Info, "Qayta ulanish muvaffaqiyatli yakunlandi.");
-                    _isReconnecting = false;
+                    _logger.Log(LogLevel.Info, "Reconnection successful.");
+                    lock (_lock)
+                    {
+                        _isReconnecting = false;
+                    }
                     _retryCount = 0;
                     return;
                 }
             }
             catch (Exception ex)
             {
-                _logger.Log(LogLevel.Error, $"Urinish {_retryCount} muvaffaqiyatsiz tugadi: {ex.Message}");
+                _logger.Log(LogLevel.Error, $"Attempt {_retryCount} failed: {ex.Message}");
             }
         }
 
-        _isReconnecting = false;
-        _logger.Log(LogLevel.Critical, "Maksimal urinishlar soni tugadi. Avtomatik ulanish to'xtatildi.");
+        lock (_lock)
+        {
+            _isReconnecting = false;
+        }
+        _logger.Log(LogLevel.Critical, "Maximum reconnection attempts reached. Automatic reconnection stopped.");
+    }
+    
+    /// <summary>
+    /// Resets the reconnection state
+    /// </summary>
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _isReconnecting = false;
+        }
+        _retryCount = 0;
     }
 }

@@ -1,39 +1,50 @@
-﻿using RealTime.Native.Common.Infrastructure;
+﻿using Microsoft.Extensions.DependencyInjection;
+using RealTime.Native.Common.Infrastructure;
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
+using RealTime.Native.Common.Services;
+using RealTime.Native.TcpClient.Abstractions;
 using RealTime.Native.TcpClient.Core;
+using RealTime.Native.TcpClient.Services;
 
-// 1. Sozlamalarni o'rnatamiz
-var options = new ClientOptions
-{
-    Host = "127.0.0.1",
-    Port = 5000,
-    AutoReconnect = true,          // Avtomatik qayta ulanish yoniq
-    MaxRetryAttempts = 10,         // 10 martagacha urinish
-    ReconnectDelay = TimeSpan.FromSeconds(2) // Har safar kutish vaqti ortib boradi
-};
+// 1. Dependency Injection container setup
+var services = new ServiceCollection();
 
-// 2. Logger va Clientni yaratamiz
-var logger = new SharedLogger("CLIENT");
-var client = new NativeClient(options);
-var serializer = new BinarySerializer();
-// Test uchun bitta xona nomi
+// 2. Register services
+services.AddCommonServices("CLIENT")
+    .AddClientServices(new ClientOptions
+    {
+        Host = "127.0.0.1",
+        Port = 5000,
+        AutoReconnect = true,          // Auto-reconnect enabled
+        MaxRetryAttempts = 10,         // Up to 10 attempts
+        ReconnectDelay = TimeSpan.FromSeconds(2) // Delay increases each time
+    });
+
+var serviceProvider = services.BuildServiceProvider();
+
+// 3. Get required services
+var logger = serviceProvider.GetRequiredService<SharedLogger>();
+var client = serviceProvider.GetRequiredService<ITcpClient>();
+var serializer = serviceProvider.GetRequiredService<ISerializer>();
+
+// Test room name
 string currentRoom = "DEFAULT_CHAT";
 
-logger.Log(LogLevel.Info, "Mijoz ishga tushmoqda...");
+logger.Log(LogLevel.Info, "Client starting...");
 
-// 3. Voqealarga (Events) obuna bo'lamiz
+// 4. Subscribe to events
 client.OnConnected += (s, e) =>
 {
-    logger.Log(LogLevel.Success, "Serverga ulanish muvaffaqiyatli amalga oshirildi!");
+    logger.Log(LogLevel.Success, "Successfully connected to server!");
 };
 
 client.OnDisconnected += (s, e) =>
 {
-    logger.Log(LogLevel.Warning, "Server bilan aloqa uzildi.");
+    logger.Log(LogLevel.Warning, "Disconnected from server.");
 };
 
-// 3. Xabarni qabul qilish qismini yangilaymiz
+// 4. Update message receiving logic
 client.OnMessageReceived += (s, e) =>
 {
     var cmd = serializer.Deserialize<CommandPackage>(e.RawData.ToArray());
@@ -48,23 +59,23 @@ client.OnMessageReceived += (s, e) =>
 
 client.OnError += (s, e) =>
 {
-    logger.Log(LogLevel.Error, $"Xatolik yuz berdi ({e.Context}): {e.Exception.Message}");
+    logger.Log(LogLevel.Error, $"Error occurred ({e.Context}): {e.Exception.Message}");
 };
 
-// 4. Serverga ulanish
+// 5. Connect to server
 try
 {
     await client.ConnectAsync();
 }
-catch (Exception ex)
+catch (Exception)
 {
-    logger.Log(LogLevel.Critical, "Dastlabki ulanishda xato, lekin ReconnectionManager fonda ishlashni boshlaydi.");
+    logger.Log(LogLevel.Critical, "Initial connection failed, but ReconnectionManager will start in background.");
 }
 
 await client.SendAsync(new CommandPackage(CommandType.JoinRoom, currentRoom, ""));
 
-// 5. Konsol orqali muloqot qilish
-logger.Log(LogLevel.Info, "Xabar yuborish uchun matn yozing va Enter bosing (Chiqish uchun 'exit'):");
+// 6. Console-based communication
+logger.Log(LogLevel.Info, "Enter text and press Enter to send messages (Type 'exit' to quit):\n");
 
 while (true)
 {
@@ -72,7 +83,7 @@ while (true)
     if (string.IsNullOrWhiteSpace(input)) continue;
     if (input.Equals("exit", StringComparison.OrdinalIgnoreCase)) break;
 
-    // Xonani o'zgartirish buyrug'i (masalan: /join it_park)
+    // Room change command (e.g., /join it_park)
     if (input.StartsWith("/join "))
     {
         currentRoom = input.Replace("/join ", "").Trim();
@@ -88,4 +99,12 @@ while (true)
 }
 
 await client.DisconnectAsync();
-logger.Log(LogLevel.Info, "Dastur yakunlandi.");
+logger.Log(LogLevel.Info, "Application ended.");
+
+// Cleanup
+if (client is IAsyncDisposable asyncDisposable)
+    await asyncDisposable.DisposeAsync();
+else if (client is IDisposable disposable)
+    disposable.Dispose();
+
+logger.Log(LogLevel.Info, "Client resources disposed.");

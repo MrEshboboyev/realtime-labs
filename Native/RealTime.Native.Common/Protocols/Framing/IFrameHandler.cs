@@ -1,10 +1,22 @@
 ﻿namespace RealTime.Native.Common.Protocols.Framing;
 
+/// <summary>
+/// Defines the contract for message framing and deframing
+/// </summary>
 public interface IFrameHandler
 {
-    // Ma'lumotni yuborishdan oldin unga uzunlik prefiksini qo'shadi
+    /// <summary>
+    /// Wraps data with a length prefix for reliable transmission
+    /// </summary>
+    /// <param name="data">The data to wrap</param>
+    /// <returns>Frame with length prefix prepended</returns>
     byte[] Wrap(byte[] data);
 
-    // Oqimdan kelayotgan baytlarni yig'ib, to'liq xabar bo'lganda qaytaradi
+    /// <summary>
+    /// Unwraps received data, extracting complete messages from the buffer
+    /// </summary>
+    /// <param name="receivedData">Newly received data</param>
+    /// <param name="connectionId">The connection identifier</param>
+    /// <returns>Enumeration of complete messages</returns>
     IEnumerable<byte[]> Unwrap(byte[] receivedData, Guid connectionId);
 }
