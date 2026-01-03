@@ -86,24 +86,31 @@ server.MessageReceived += async (s, package) =>
 // 4. Serverni ishga tushirish
 var cts = new CancellationTokenSource();
 
-// Konsolni yopganda serverni chiroyli to'xtatish uchun
-Console.CancelKeyPress += async (s, e) =>
+Console.CancelKeyPress += (s, e) =>
 {
-    e.Cancel = true;
-    logger.Log(LogLevel.Critical, "Server to'xtatilmoqda...");
-    await server.StopAsync();
-    cts.Cancel();
+    e.Cancel = true; // Control+C ni ushlab qolamiz
+    logger.Log(LogLevel.Critical, "Server to'xtatish signali qabul qilindi...");
+    cts.Cancel(); // Barcha jarayonlarga "to'xta" signalini yuboramiz
 };
 
 try
 {
-    logger.Log(LogLevel.Info, $"TCP Server {options.Port}-portda tinglashni boshlamoqda...");
+    logger.Log(LogLevel.Info, $"TCP Server {options.Port}-portda ishga tushmoqda...");
+
+    // Serverni ishga tushiramiz va uning tugashini yoki cancel bo'lishini kutamiz
     await server.StartAsync(options.Port, cts.Token);
+}
+catch (OperationCanceledException)
+{
+    // Bu kutilgan holat, xato emas
+    logger.Log(LogLevel.Info, "Server cancel orqali to'xtatildi.");
 }
 catch (Exception ex)
 {
     logger.Log(LogLevel.Critical, "Server kutilmaganda to'xtadi", ex);
 }
-
-// Dastur tugab qolmasligi uchun
-await Task.Delay(-1);
+finally
+{
+    await server.StopAsync();
+    logger.Log(LogLevel.Info, "Dastur yakunlandi.");
+}
