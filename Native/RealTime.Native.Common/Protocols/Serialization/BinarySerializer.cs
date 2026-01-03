@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using RealTime.Native.Common.Models;
+using System.Text;
 
 namespace RealTime.Native.Common.Protocols.Serialization;
 
@@ -6,35 +7,43 @@ public class BinarySerializer : ISerializer
 {
     public byte[] Serialize<T>(T obj)
     {
-        // Oddiy string yoki value-type'larni binaryga o'girish mantiqi
+        if (obj is CommandPackage cmd)
+        {
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms, Encoding.UTF8);
+
+            writer.Write((int)cmd.Type);      // Enum -> int
+            writer.Write(cmd.RoomId ?? "");   // String
+            writer.Write(cmd.Content ?? "");  // String
+            writer.Write(cmd.SenderName ?? ""); // String
+
+            return ms.ToArray();
+        }
+
         if (obj is string str)
-            return System.Text.Encoding.UTF8.GetBytes(str);
+            return Encoding.UTF8.GetBytes(str);
 
-        // Murakkab ob'ektlar uchun struct -> byte[] konvertatsiyasi
-        int size = Marshal.SizeOf(obj!);
-        byte[] arr = new byte[size];
-        IntPtr ptr = Marshal.AllocHGlobal(size);
-
-        Marshal.StructureToPtr(obj!, ptr, true);
-        Marshal.Copy(ptr, arr, 0, size);
-        Marshal.FreeHGlobal(ptr);
-
-        return arr;
+        throw new NotSupportedException($"{typeof(T).Name} uchun serializer topilmadi.");
     }
 
     public T? Deserialize<T>(byte[] data)
     {
-        if (typeof(T) == typeof(string))
-            return (T)(object)System.Text.Encoding.UTF8.GetString(data);
+        if (typeof(T) == typeof(CommandPackage))
+        {
+            using var ms = new MemoryStream(data);
+            using var reader = new BinaryReader(ms, Encoding.UTF8);
 
-        GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-        try
-        {
-            return Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
+            var type = (CommandType)reader.ReadInt32();
+            var roomId = reader.ReadString();
+            var content = reader.ReadString();
+            var senderName = reader.ReadString();
+
+            return (T)(object)new CommandPackage(type, roomId, content, senderName);
         }
-        finally
-        {
-            handle.Free();
-        }
+
+        if (typeof(T) == typeof(string))
+            return (T)(object)Encoding.UTF8.GetString(data);
+
+        return default;
     }
 }

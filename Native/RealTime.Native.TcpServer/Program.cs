@@ -1,10 +1,11 @@
 ﻿using RealTime.Native.Common.Infrastructure;
+using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Framing;
 using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.TcpServer.Core;
 
 // 1. Infratuzilmani sozlash
-var logger = new SharedLogger("Server");
+var logger = new SharedLogger("SERVER");
 var options = new ServerOptions
 {
     Port = 5000,
@@ -33,34 +34,52 @@ server.ClientDisconnected += (s, connectionId) =>
     logger.Log(LogLevel.Warning, $"[DISCONNECTED] ID: {connectionId}");
 };
 
-// Xabar kelganda (Eng asosiy qism)
+// Xabar kelganda (Xonalar va Buyruqlar mantiqi)
 server.MessageReceived += async (s, package) =>
 {
     try
     {
-        // 1. Kelgan baytlarni stringga o'girish (BinarySerializer yordamida)
-        string message = binarySerializer.Deserialize<string>(package.Data.ToArray()) ?? "";
-        logger.Log(LogLevel.Info, $"[MESSAGE] {package.ConnectionId.ToString()[..8]}: {message}");
+        // 1. Paketni CommandPackage sifatida deserializatsiya qilish
+        var command = binarySerializer.Deserialize<CommandPackage>(package.Data.ToArray());
+        if (command == null) return;
 
-        // 2. Broadcast mantiqi: Xabarni barcha mijozlarga tarqatish
-        byte[] responseData = binarySerializer.Serialize($"Client {package.ConnectionId.ToString()[..4]} yozdi: {message}");
+        var manager = server.GetConnectionManager();
 
-        // MUHIM: Xabarni tarmoqqa chiqarishdan oldin FrameWrap qilish shart!
-        byte[] framedResponse = frameHandler.Wrap(responseData);
-
-        var connections = server.GetConnectionManager().GetAllConnections();
-        foreach (var conn in connections)
+        switch (command.Type)
         {
-            // Xabarni yuborgan mijozning o'ziga qaytarib o'tirmaymiz (ixtiyoriy)
-            if (conn.Id != package.ConnectionId)
-            {
-                await conn.SendAsync(framedResponse);
-            }
+            case CommandType.JoinRoom:
+                manager.JoinRoom(command.RoomId, package.ConnectionId);
+                logger.Log(LogLevel.Info, $"[ROOM] {package.ConnectionId.ToString()[..4]} -> '{command.RoomId}' xonasiga kirdi.");
+
+                // Tasdiqlash xabari (faqat kiritgan odamga)
+                var welcome = binarySerializer.Serialize(new CommandPackage(CommandType.SystemAlert, command.RoomId, $"Siz {command.RoomId} xonasiga kirdingiz!"));
+                await manager.GetConnection(package.ConnectionId)?.SendAsync(frameHandler.Wrap(welcome))!;
+                break;
+
+            case CommandType.SendMessage:
+                logger.Log(LogLevel.Info, $"[MSG] Room: {command.RoomId} | From: {package.ConnectionId.ToString()[..4]} : {command.Content}");
+
+                // Xabarni faqat shu xonadagi mijozlarga yuborish
+                byte[] responseData = binarySerializer.Serialize(
+                    command with 
+                    { 
+                        SenderName = package.ConnectionId.ToString()[..4] 
+                    });
+                byte[] framedResponse = frameHandler.Wrap(responseData);
+
+                var roomClients = manager.GetRoomClients(command.RoomId);
+                foreach (var conn in roomClients)
+                {
+                    // Xabarni yuborgan odamning o'ziga qaytarmaslik (ixtiyoriy)
+                    if (conn.Id != package.ConnectionId)
+                        await conn.SendAsync(framedResponse);
+                }
+                break;
         }
     }
     catch (Exception ex)
     {
-        logger.Log(LogLevel.Error, "Xabarni qayta ishlashda xatolik", ex);
+        logger.Log(LogLevel.Error, "Buyruqni bajarishda xatolik", ex);
     }
 };
 
