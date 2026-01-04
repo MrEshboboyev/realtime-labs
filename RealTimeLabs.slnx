@@ -11,6 +11,8 @@
   </Folder>
   <Folder Name="/Native/Udp/">
     <Project Path="Native/Udp/RealTime.Native.Udp/RealTime.Native.Udp.csproj" Id="86c572d7-09e7-4807-a8bd-b0fedab357dd" />
+    <Project Path="Native/Udp/RealTime.Native.UdpClient.App/RealTime.Native.UdpClient.App.csproj" Id="7dcc3a9a-e36a-4455-8943-1c5aac08b055" />
+    <Project Path="Native/Udp/RealTime.Native.UdpServer.App/RealTime.Native.UdpServer.App.csproj" Id="096e5038-1a37-47eb-857f-5cc058c4ee10" />
   </Folder>
   <Folder Name="/WebNative/" />
 </Solution>

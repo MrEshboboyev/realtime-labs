@@ -41,7 +41,8 @@ public class UdpServerListener(
                 var package = new TransportPackage(
                     Guid.Empty, // UDPda qat'iy GUID yo'q
                     result.Buffer,
-                    DateTime.UtcNow
+                    DateTimeOffset.UtcNow,
+                    result.RemoteEndPoint
                 );
 
                 MessageReceived?.Invoke(this, package);

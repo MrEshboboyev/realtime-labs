@@ -1,4 +1,6 @@
-﻿namespace RealTime.Native.Common.Models;
+﻿using System.Net;
+
+namespace RealTime.Native.Common.Models;
 
 /// <summary>
 /// Represents raw network data with its context
@@ -17,5 +19,7 @@ public sealed record TransportPackage(
     /// <summary>
     /// The time when data was received
     /// </summary>
-    DateTimeOffset ReceivedAt
+    DateTimeOffset ReceivedAt,
+
+    IPEndPoint? RemoteEndPoint = null
 );
