@@ -2,10 +2,12 @@
   <Folder Name="/Abstractions/" />
   <Folder Name="/GoogleProtocols/" />
   <Folder Name="/IoTAndMessaging/" />
-  <Folder Name="/Native/">
-    <Project Path="Native/RealTime.Native.Common/RealTime.Native.Common.csproj" Id="4f803ea2-8afb-4788-8ac3-1c26cf7a2e1b" />
-    <Project Path="Native/RealTime.Native.TcpClient/RealTime.Native.TcpClient.csproj" Id="c89a730d-ae72-4521-a0f3-6bf5465ca786" />
-    <Project Path="Native/RealTime.Native.TcpServer/RealTime.Native.TcpServer.csproj" />
+  <Folder Name="/Native/" />
+  <Folder Name="/Native/Tcp/">
+    <Project Path="Native/Tcp/RealTime.Native.Common/RealTime.Native.Common.csproj" />
+    <Project Path="Native/Tcp/RealTime.Native.TcpClient/RealTime.Native.TcpClient.csproj" />
+    <Project Path="Native/Tcp/RealTime.Native.TcpServer/RealTime.Native.TcpServer.csproj" />
   </Folder>
+  <Folder Name="/Native/Udp/" />
   <Folder Name="/WebNative/" />
 </Solution>
