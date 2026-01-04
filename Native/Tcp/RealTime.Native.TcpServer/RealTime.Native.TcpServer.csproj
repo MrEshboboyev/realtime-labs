@@ -7,8 +7,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\RealTime.Native.Common\RealTime.Native.Common.csproj" />
-  </ItemGroup>
-
 </Project>
