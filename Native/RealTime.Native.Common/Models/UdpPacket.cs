@@ -1,4 +1,4 @@
-﻿namespace RealTime.Native.Udp.Models;
+﻿namespace RealTime.Native.Common.Models;
 
 [Serializable]
 public record UdpPacket(

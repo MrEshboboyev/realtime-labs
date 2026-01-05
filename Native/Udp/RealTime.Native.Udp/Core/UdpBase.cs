@@ -12,14 +12,16 @@ public abstract class UdpBase
 
     protected UdpBase(string owner, int? port = null)
     {
-        Socket = port.HasValue ? new UdpClient(port.Value) : new UdpClient();
         Logger = new SharedLogger(owner);
+        // Port berilgan bo'lsa server, berilmagan bo'lsa mijoz (0 - dinamik port)
+        Socket = port.HasValue ? new UdpClient(port.Value) : new UdpClient(0);
 
         // UDP uchun muhim: "Connection Reset" xatosini e'tiborsiz qoldirish (Windows uchun)
         if (OperatingSystem.IsWindows())
         {
             const int SIO_UDP_CONNRESET = -1744830452;
-            Socket.Client.IOControl(SIO_UDP_CONNRESET, [0], null);
+            try { Socket.Client.IOControl(SIO_UDP_CONNRESET, [0], null); }
+            catch { /* Ba'zi muhitlarda ruxsat berilmasligi mumkin */ }
         }
     }
 

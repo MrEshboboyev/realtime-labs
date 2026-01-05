@@ -1,10 +1,9 @@
-﻿using System.Net;
-using System.Net.Sockets;
-using RealTime.Native.Common.Infrastructure;
+﻿using RealTime.Native.Common.Infrastructure;
+using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Abstractions;
-using RealTime.Native.Udp.Models;
 using RealTime.Native.Udp.Reliable;
+using System.Net;
 
 namespace RealTime.Native.Udp.Core;
 
@@ -23,16 +22,21 @@ public class NativeUdpClient : UdpBase, IUdpClient
 
     public async Task ConnectAsync(string host, int port)
     {
-        _serverEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
-        IsActive = true;
+        try
+        {
+            _serverEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
+            IsActive = true;
 
-        // Paketlarni qabul qilishni boshlash
-        _ = ReceiveLoop(_cts.Token);
+            _ = Task.Run(() => ReceiveLoop(_cts.Token), _cts.Token);
+            _ = Task.Run(() => HeartbeatLoop(_cts.Token), _cts.Token);
 
-        // Heartbeat yuborib turish (Server bizni o'chib qoldi deb o'ylamasligi uchun)
-        _ = HeartbeatLoop(_cts.Token);
-
-        Logger.Log(LogLevel.Success, $"Serverga virtual ulanish o'rnatildi: {host}:{port}");
+            Logger.Log(LogLevel.Success, $"UDP Client ulanishga tayyor: {host}:{port}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log(LogLevel.Error, "Ulanishda xatolik", ex);
+            throw;
+        }
     }
 
     public async Task SendAsync<T>(T message)
@@ -89,8 +93,10 @@ public class NativeUdpClient : UdpBase, IUdpClient
     {
         while (!ct.IsCancellationRequested)
         {
-            // Bo'sh paket yuborib turish - serverda sessiyamizni yangilaydi
-            await SendAsync("PING");
+            // PING so'zini ham UdpPacket ichida yuboramiz
+            var pingCmd = new CommandPackage(CommandType.SendMessage, "SYSTEM", "PING");
+            await SendAsync(pingCmd);
+
             await Task.Delay(5000, ct);
         }
     }

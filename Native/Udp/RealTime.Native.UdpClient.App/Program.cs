@@ -4,33 +4,31 @@ using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Core;
 
 var logger = new SharedLogger("UDP-CLIENT");
-var client = new NativeUdpClient();
-var serializer = new BinarySerializer();
+logger.Log(LogLevel.Info, "Dastur boshlandi...");
 
-client.MessageReceived += (s, data) =>
+try
 {
-    var command = serializer.Deserialize<CommandPackage>(data);
-    if (command != null)
+    var client = new NativeUdpClient();
+    var serializer = new BinarySerializer();
+
+    client.OnError += (s, ex) => logger.Log(LogLevel.Error, $"XATO: {ex.Message}");
+
+    logger.Log(LogLevel.Info, "Serverga ulanish...");
+    await client.ConnectAsync("127.0.0.1", 5001);
+
+    var joinCmd = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "");
+    await client.SendAsync(joinCmd);
+
+    logger.Log(LogLevel.Success, "Chat faol. Xabar yozing:");
+
+    while (true)
     {
-        logger.Log(LogLevel.Info, $"[UDP-ROOM]: {command.SenderName}: {command.Content}");
+        var input = Console.ReadLine();
+        if (string.IsNullOrEmpty(input) || input == "exit") break;
+        await client.SendAsync(new CommandPackage(CommandType.SendMessage, "GAMING_ZONE", input));
     }
-};
-
-await client.ConnectAsync("127.0.0.1", 5001);
-
-// Xonaga kirish buyrug'i
-var joinCmd = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "");
-await client.SendAsync(joinCmd);
-
-logger.Log(LogLevel.Success, "UDP Chatga xush kelibsiz! Xabar yozing:");
-
-while (true)
-{
-    var input = Console.ReadLine();
-    if (input == "exit") break;
-
-    var msg = new CommandPackage(CommandType.SendMessage, "GAMING_ZONE", input ?? "");
-    await client.SendAsync(msg);
 }
-
-await client.DisconnectAsync();
+catch (Exception ex)
+{
+    logger.Log(LogLevel.Error, "Kutilmagan halokat!", ex);
+}
