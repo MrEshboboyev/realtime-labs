@@ -4,31 +4,52 @@ using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Core;
 
 var logger = new SharedLogger("UDP-CLIENT");
-logger.Log(LogLevel.Info, "Dastur boshlandi...");
+Console.Write("Ismingizni kiriting: ");
+string userName = Console.ReadLine() ?? "Guest";
 
 try
 {
     var client = new NativeUdpClient();
     var serializer = new BinarySerializer();
 
-    client.OnError += (s, ex) => logger.Log(LogLevel.Error, $"XATO: {ex.Message}");
+    client.MessageReceived += (s, data) =>
+    {
+        try
+        {
+            var command = serializer.Deserialize<CommandPackage>(data);
+            if (command != null && command.Type == CommandType.SendMessage && command.Content != "PING")
+            {
+                // MUHIM: Hozirgi yozilayotgan qatorni tozalab, xabarni chiqarish
+                // Bu ReadLine'ni kutib turgan kursorni "buzib" xabarni ko'rsatadi
+                string message = $"[ROOM] {command.SenderName}: {command.Content}";
 
-    logger.Log(LogLevel.Info, "Serverga ulanish...");
+                // Konsolning pastki qatoriga o'tmay, yangi qator ochish
+                Console.WriteLine("\r" + message);
+                Console.Write("> "); // Kursorni qayta tiklash
+            }
+        }
+        catch { }
+    };
+
     await client.ConnectAsync("127.0.0.1", 5001);
 
-    var joinCmd = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "");
+    var joinCmd = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "", userName);
     await client.SendAsync(joinCmd);
 
-    logger.Log(LogLevel.Success, "Chat faol. Xabar yozing:");
-
+    // Xabar yuborish sikli
     while (true)
     {
+        // Kursor tayyor tursin
+        Console.Write("> ");
         var input = Console.ReadLine();
-        if (string.IsNullOrEmpty(input) || input == "exit") break;
-        await client.SendAsync(new CommandPackage(CommandType.SendMessage, "GAMING_ZONE", input));
+
+        if (input == "exit") break;
+        if (string.IsNullOrWhiteSpace(input)) continue;
+
+        await client.SendAsync(new CommandPackage(CommandType.SendMessage, "GAMING_ZONE", input, userName));
     }
 }
 catch (Exception ex)
 {
-    logger.Log(LogLevel.Error, "Kutilmagan halokat!", ex);
+    logger.Log(LogLevel.Error, "Xatolik!", ex);
 }

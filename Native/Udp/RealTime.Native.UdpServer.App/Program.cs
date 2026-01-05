@@ -49,17 +49,26 @@ server.MessageReceived += async (s, package) =>
                 break;
 
             case CommandType.SendMessage:
-                logger.Log(LogLevel.Info, $"[MESSAGE] {senderEp}: {command.Content}");
+                // PING xabarlarini log qilmaslik (terminalni tozalash uchun)
+                if (command.Content != "PING")
+                {
+                    logger.Log(LogLevel.Info, $"[MESSAGE] {command.SenderName} ({senderEp}): {command.Content}");
+                }
+
                 if (rooms.TryGetValue(command.RoomId, out var clients))
                 {
-                    // Xabarni tayyorlash
-                    byte[] responsePayload = serializer.Serialize(command with { SenderName = senderEp.ToString() });
+                    // MUHIM: senderEp.ToString() ni olib tashlaymiz, 
+                    // chunki mijoz o'z ismini CommandPackage ichida yubormoqda.
+                    byte[] responsePayload = serializer.Serialize(command);
+
                     var responsePacket = new UdpPacket(Guid.NewGuid(), 0, responsePayload);
                     byte[] finalData = serializer.Serialize(responsePacket);
 
                     foreach (var clientEp in clients)
                     {
+                        // Xabarni hamma xona a'zolariga yuborish
                         await server.SendAsync(finalData, clientEp);
+                        logger.Log(LogLevel.Info, $"Broadcast yuborildi: {clientEp}");
                     }
                 }
                 break;

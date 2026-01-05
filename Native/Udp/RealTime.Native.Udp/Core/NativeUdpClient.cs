@@ -76,7 +76,10 @@ public class NativeUdpClient : UdpBase, IUdpClient
                 if (packet == null) continue;
 
                 // Sequencer orqali tartibga solib, MessageReceived'ga uzatamiz
-                var orderedMessages = _sequencer.ProcessInOrder(packet.SequenceNumber, packet.Payload);
+                var orderedMessages = _sequencer.ProcessInOrder(
+                    packet.SequenceNumber,
+                    packet.Payload);
+
                 foreach (var msg in orderedMessages)
                 {
                     MessageReceived?.Invoke(this, msg);
