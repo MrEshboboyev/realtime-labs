@@ -3,37 +3,40 @@ using RealTime.Native.Common.Infrastructure;
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Core;
+using RealTime.Native.Udp.Factories;
+using RealTime.Native.Udp.Configuration;
 
-// 1. Infratuzilma
+// 1. Infrastructure
 var logger = new SharedLogger("UDP-SERVER");
 var serializer = new BinarySerializer();
-var sessionManager = new SessionManager(TimeSpan.FromSeconds(30)); // 30 sekunda faol bo'lmasa o'chirish
-var server = new UdpServerListener(TimeSpan.FromSeconds(30));
+var configuration = new UdpConfiguration();
+var sessionManager = new SessionManager(configuration.ClientTimeout); // Remove inactive sessions based on config
+var server = UdpFactory.CreateServer(configuration);
 
-// 2. Oddiy xona boshqaruvi (IPEndPointlar ro'yxati)
+// 2. Simple room management (IPEndPoint collection)
 var rooms = new Dictionary<string, HashSet<IPEndPoint>>();
 
-logger.Log(LogLevel.Info, "UDP Server tayyorlanmoqda...");
+logger.Log(LogLevel.Info, "UDP Server initializing...");
 
-// 3. Xabar kelganda bajariladigan mantiq
-server.MessageReceived += async (s, package) =>
+// 3. Message processing logic
+server.MessageReceived += async (sender, package) =>
 {
-    // 1. MANA BU LOGNI QO'SHING: Paket umuman kelyaptimi?
-    logger.Log(LogLevel.Info, $"Raw paket keldi! Hajmi: {package.Data.Length} bayt. Kimdan: {package.RemoteEndPoint}");
+    // Add this log: Is packet actually arriving?
+    logger.Log(LogLevel.Info, $"Raw packet received! Size: {package.Data.Length} bytes. From: {package.RemoteEndPoint}");
 
     try
     {
         var udpPacket = serializer.Deserialize<UdpPacket>(package.Data.ToArray());
         if (udpPacket == null)
         {
-            logger.Log(LogLevel.Warning, "UdpPacket deserialize bo'lmadi!");
+            logger.Log(LogLevel.Warning, "Failed to deserialize UdpPacket!");
             return;
         }
 
         var command = serializer.Deserialize<CommandPackage>(udpPacket.Payload);
         if (command == null)
         {
-            logger.Log(LogLevel.Warning, "CommandPackage deserialize bo'lmadi!");
+            logger.Log(LogLevel.Warning, "Failed to deserialize CommandPackage!");
             return;
         }
 
@@ -45,11 +48,11 @@ server.MessageReceived += async (s, package) =>
             case CommandType.JoinRoom:
                 if (!rooms.ContainsKey(command.RoomId)) rooms[command.RoomId] = new();
                 lock (rooms[command.RoomId]) { rooms[command.RoomId].Add(senderEp); }
-                logger.Log(LogLevel.Success, $"[JOIN] {senderEp} xonaga kirdi: {command.RoomId}");
+                logger.Log(LogLevel.Success, $"[JOIN] {senderEp} joined room: {command.RoomId}");
                 break;
 
             case CommandType.SendMessage:
-                // PING xabarlarini log qilmaslik (terminalni tozalash uchun)
+                // Don't log PING messages (to avoid cluttering the terminal)
                 if (command.Content != "PING")
                 {
                     logger.Log(LogLevel.Info, $"[MESSAGE] {command.SenderName} ({senderEp}): {command.Content}");
@@ -57,8 +60,8 @@ server.MessageReceived += async (s, package) =>
 
                 if (rooms.TryGetValue(command.RoomId, out var clients))
                 {
-                    // MUHIM: senderEp.ToString() ni olib tashlaymiz, 
-                    // chunki mijoz o'z ismini CommandPackage ichida yubormoqda.
+                    // IMPORTANT: Remove senderEp.ToString(), 
+                    // because client sends their name in CommandPackage.
                     byte[] responsePayload = serializer.Serialize(command);
 
                     var responsePacket = new UdpPacket(Guid.NewGuid(), 0, responsePayload);
@@ -66,9 +69,9 @@ server.MessageReceived += async (s, package) =>
 
                     foreach (var clientEp in clients)
                     {
-                        // Xabarni hamma xona a'zolariga yuborish
+                        // Broadcast message to all room members
                         await server.SendAsync(finalData, clientEp);
-                        logger.Log(LogLevel.Info, $"Broadcast yuborildi: {clientEp}");
+                        logger.Log(LogLevel.Info, $"Broadcast sent: {clientEp}");
                     }
                 }
                 break;
@@ -76,15 +79,15 @@ server.MessageReceived += async (s, package) =>
     }
     catch (Exception ex)
     {
-        logger.Log(LogLevel.Error, $"Xatolik: {ex.Message}");
+        logger.Log(LogLevel.Error, $"Error: {ex.Message}");
     }
 };
 
-// Yangi mijoz faolligi (Join Room mantiqi uchun qulay joy)
-server.ClientActivity += (s, ep) =>
+// Client activity (convenient place for Join Room logic)
+server.ClientActivity += (sender, ep) =>
 {
-    // logger.Log(LogLevel.Info, $"Faollik: {ep}");
+    // logger.Log(LogLevel.Info, $"Activity: {ep}");
 };
 
-// 4. Serverni yurgizish
+// 4. Start the server
 await server.StartAsync(5001); // UDP port: 5001

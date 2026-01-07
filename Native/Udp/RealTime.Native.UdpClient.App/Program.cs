@@ -2,30 +2,33 @@
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Core;
+using RealTime.Native.Udp.Factories;
+using RealTime.Native.Udp.Configuration;
 
 var logger = new SharedLogger("UDP-CLIENT");
-Console.Write("Ismingizni kiriting: ");
+Console.Write("Enter your name: ");
 string userName = Console.ReadLine() ?? "Guest";
 
 try
 {
-    var client = new NativeUdpClient();
+    var configuration = new UdpConfiguration();
+    var client = UdpFactory.CreateClient(configuration);
     var serializer = new BinarySerializer();
 
-    client.MessageReceived += (s, data) =>
+    client.MessageReceived += (sender, data) =>
     {
         try
         {
             var command = serializer.Deserialize<CommandPackage>(data);
             if (command != null && command.Type == CommandType.SendMessage && command.Content != "PING")
             {
-                // MUHIM: Hozirgi yozilayotgan qatorni tozalab, xabarni chiqarish
-                // Bu ReadLine'ni kutib turgan kursorni "buzib" xabarni ko'rsatadi
+                // IMPORTANT: Clear the current input line and display the message
+                // This "breaks" the ReadLine cursor to show the message
                 string message = $"[ROOM] {command.SenderName}: {command.Content}";
 
-                // Konsolning pastki qatoriga o'tmay, yangi qator ochish
+                // Print message without moving to next line
                 Console.WriteLine("\r" + message);
-                Console.Write("> "); // Kursorni qayta tiklash
+                Console.Write("> "); // Restore cursor position
             }
         }
         catch { }
@@ -33,13 +36,13 @@ try
 
     await client.ConnectAsync("127.0.0.1", 5001);
 
-    var joinCmd = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "", userName);
-    await client.SendAsync(joinCmd);
+    var joinCommand = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "", userName);
+    await client.SendAsync(joinCommand);
 
-    // Xabar yuborish sikli
+    // Message sending loop
     while (true)
     {
-        // Kursor tayyor tursin
+        // Keep cursor ready
         Console.Write("> ");
         var input = Console.ReadLine();
 
@@ -51,5 +54,5 @@ try
 }
 catch (Exception ex)
 {
-    logger.Log(LogLevel.Error, "Xatolik!", ex);
+    logger.Log(LogLevel.Error, "Error!", ex);
 }
