@@ -33,6 +33,8 @@ public interface IUdpClient : IDisposable
     /// <returns>A task representing the asynchronous operation.</returns>
     Task SendAsync<T>(T message);
 
+    Task SendReliableAsync<T>(T message);
+
     /// <summary>
     /// Disconnects the UDP client from the remote endpoint.
     /// </summary>

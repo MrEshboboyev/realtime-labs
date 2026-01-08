@@ -1,9 +1,8 @@
 ﻿using RealTime.Native.Common.Infrastructure;
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
-using RealTime.Native.Udp.Core;
-using RealTime.Native.Udp.Factories;
 using RealTime.Native.Udp.Configuration;
+using RealTime.Native.Udp.Factories;
 
 var logger = new SharedLogger("UDP-CLIENT");
 Console.Write("Enter your name: ");
@@ -37,7 +36,7 @@ try
     await client.ConnectAsync("127.0.0.1", 5001);
 
     var joinCommand = new CommandPackage(CommandType.JoinRoom, "GAMING_ZONE", "", userName);
-    await client.SendAsync(joinCommand);
+    await client.SendReliableAsync(joinCommand);
 
     // Message sending loop
     while (true)
@@ -49,7 +48,11 @@ try
         if (input == "exit") break;
         if (string.IsNullOrWhiteSpace(input)) continue;
 
-        await client.SendAsync(new CommandPackage(CommandType.SendMessage, "GAMING_ZONE", input, userName));
+        await client.SendReliableAsync(new CommandPackage(
+            CommandType.SendMessage, 
+            "GAMING_ZONE",
+            input, 
+            userName));
     }
 }
 catch (Exception ex)

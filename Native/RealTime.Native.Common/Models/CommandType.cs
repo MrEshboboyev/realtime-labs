@@ -23,5 +23,7 @@ public enum CommandType
     /// <summary>
     /// System-generated alert message
     /// </summary>
-    SystemAlert 
+    SystemAlert,
+
+    Ack
 }

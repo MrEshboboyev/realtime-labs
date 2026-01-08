@@ -3,6 +3,7 @@ using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.Udp.Abstractions;
 using RealTime.Native.Udp.Reliable;
+using System.Collections.Concurrent;
 using System.Net;
 
 namespace RealTime.Native.Udp.Core;
@@ -16,6 +17,9 @@ public class NativeUdpClient : UdpBase, IUdpClient
     private readonly BinarySerializer _serializer = new();
     private readonly PacketSequencer _sequencer = new();
     private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly ConcurrentDictionary
+        <Guid, 
+        (UdpPacket Packet, DateTimeOffset SentTime, int RetryCount)> _pendingAcks = new();
 
     /// <summary>
     /// Occurs when a message is received from the remote endpoint.
@@ -52,6 +56,7 @@ public class NativeUdpClient : UdpBase, IUdpClient
 
             _ = Task.Run(() => ReceiveLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
             _ = Task.Run(() => HeartbeatLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
+            _ = Task.Run(() => RetryLoop(_cancellationTokenSource.Token), _cancellationTokenSource.Token);
 
             Logger.Log(LogLevel.Success, $"UDP Client ready to connect: {host}:{port}");
         }
@@ -92,6 +97,32 @@ public class NativeUdpClient : UdpBase, IUdpClient
         }
     }
 
+    public async Task SendReliableAsync<T>(T message)
+    {
+        if (!IsActive || _serverEndPoint == null) return;
+
+        try
+        {
+            var payload = _serializer.Serialize(message);
+            var packet = new UdpPacket(
+                Guid.NewGuid(),
+                _sequencer.GetNextSequenceNumber(),
+                payload,
+                RequiresAck: true // Tasdiq talab qilamiz
+            );
+
+            // Paketni "Kutilayotganlar" ro'yxatiga qo'shamiz
+            _pendingAcks.TryAdd(packet.PacketId, (packet, DateTimeOffset.Now, 0));
+
+            var finalData = _serializer.Serialize(packet);
+            await SendRawAsync(finalData, _serverEndPoint!);
+        }
+        catch (Exception ex)
+        {
+            OnError?.Invoke(this, ex);
+        }
+    }
+
     /// <summary>
     /// Runs the receive loop to handle incoming messages.
     /// </summary>
@@ -108,6 +139,21 @@ public class NativeUdpClient : UdpBase, IUdpClient
                 // Deserialize the incoming packet as UdpPacket
                 var packet = _serializer.Deserialize<UdpPacket>(result.Buffer);
                 if (packet == null) continue;
+
+                // Kelgan payloadni CommandPackage sifatida ochamiz
+                var command = _serializer.Deserialize<CommandPackage>(packet.Payload);
+                if (command == null) continue;
+
+                // AGAR BU ACK BO'LSA:
+                if (command.Type == CommandType.Ack)
+                {
+                    if (Guid.TryParse(command.Content, out Guid confirmedId))
+                    {
+                        _pendingAcks.TryRemove(confirmedId, out _);
+                        Logger.Log(LogLevel.Info, $"Paket tasdiqlandi: {confirmedId}");
+                    }
+                    continue;
+                }
 
                 // Process messages in order using the sequencer and forward to MessageReceived
                 var orderedMessages = _sequencer.ProcessInOrder(
@@ -126,6 +172,35 @@ public class NativeUdpClient : UdpBase, IUdpClient
         }
     }
 
+    private async Task RetryLoop(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var now = DateTimeOffset.Now;
+            foreach (var (id, entry) in _pendingAcks)
+            {
+                if ((now - entry.SentTime).TotalMilliseconds > 500) // 500ms kutish
+                {
+                    if (entry.RetryCount < 3) // Maksimal 3 marta urinish
+                    {
+                        // Qayta yuborish
+                        var finalData = _serializer.Serialize(entry.Packet);
+                        await SendRawAsync(finalData, _serverEndPoint!);
+
+                        // Ma'lumotni yangilash
+                        _pendingAcks[id] = (entry.Packet, now, entry.RetryCount + 1);
+                    }
+                    else
+                    {
+                        _pendingAcks.TryRemove(id, out _);
+                        Logger.Log(LogLevel.Error, $"Paket yo'qoldi (PacketId: {id})");
+                    }
+                }
+            }
+            await Task.Delay(100, ct);
+        }
+    }
+
     /// <summary>
     /// Runs the heartbeat loop to maintain connection.
     /// </summary>
@@ -137,7 +212,7 @@ public class NativeUdpClient : UdpBase, IUdpClient
         {
             // Send PING command wrapped in UdpPacket
             var pingCommand = new CommandPackage(CommandType.SendMessage, "SYSTEM", "PING");
-            await SendAsync(pingCommand);
+            await SendReliableAsync(pingCommand);
 
             await Task.Delay(5000, cancellationToken);
         }

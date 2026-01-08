@@ -33,6 +33,17 @@ server.MessageReceived += async (sender, package) =>
             return;
         }
 
+        if (udpPacket.RequiresAck)
+        {
+            // Tasdiq paketini tayyorlaymiz
+            var ackCmd = new CommandPackage(CommandType.Ack, "SYSTEM", udpPacket.PacketId.ToString());
+            var ackPayload = serializer.Serialize(ackCmd);
+            var ackPacket = new UdpPacket(Guid.NewGuid(), 0, ackPayload, false); // ACK o'zi ACK talab qilmaydi
+
+            byte[] ackData = serializer.Serialize(ackPacket);
+            await server.SendAsync(ackData, package.RemoteEndPoint!);
+        }
+
         var command = serializer.Deserialize<CommandPackage>(udpPacket.Payload);
         if (command == null)
         {
