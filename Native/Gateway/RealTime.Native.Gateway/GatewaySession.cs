@@ -33,6 +33,7 @@ public class GatewaySession : IGatewaySession
     public async Task SendAsync<T>(T message, bool reliable = false)
     {
         var data = _serializer.Serialize(message);
+        Console.WriteLine($"[DEBUG] Server yubormoqda: {data.Length} byte");
 
         if (reliable || UdpEndPoint == null)
         {

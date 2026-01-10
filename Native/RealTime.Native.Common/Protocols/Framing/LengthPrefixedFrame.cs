@@ -1,6 +1,5 @@
-﻿using System.Collections.Concurrent;
-using RealTime.Native.Common.Infrastructure;
-using RealTime.Native.Common.Models;
+﻿using RealTime.Native.Common.Infrastructure;
+using System.Collections.Concurrent;
 
 namespace RealTime.Native.Common.Protocols.Framing;
 

@@ -130,17 +130,23 @@ public class NativeTcpClient : ITcpClient
             while (!ct.IsCancellationRequested && IsConnected && !_disposed)
             {
                 int bytesRead = await _stream!.ReadAsync(buffer, 0, _options.ReceiveBufferSize, ct);
-                if (bytesRead == 0) break;
+                if (bytesRead <= 0) break;
 
-                // Get only the read portion of the buffer
-                var receivedSegment = new byte[bytesRead];
-                Buffer.BlockCopy(buffer, 0, receivedSegment, 0, bytesRead);
+                // 1. Faqat o'qilgan qismni ajratib olamiz
+                byte[] receivedData = new byte[bytesRead];
+                Buffer.BlockCopy(buffer, 0, receivedData, 0, bytesRead);
 
-                var frames = _frameHandler.Unwrap(receivedSegment, Id);
+                // 2. Framing handler orqali to'liq paketlarni ajratamiz
+                // Unwrap metodi IEnumerable<byte[]> qaytaradi (faqat to'liq paketlarni)
+                var completePackages = _frameHandler.Unwrap(receivedData, Id);
 
-                foreach (var frame in frames)
+                foreach (var package in completePackages)
                 {
-                    OnMessageReceived?.Invoke(this, new OnMessageEventArgs(frame));
+                    if (package != null && package.Length > 0)
+                    {
+                        // FAQAT to'liq va bo'sh bo'lmagan paketlarni eventga chiqaramiz
+                        OnMessageReceived?.Invoke(this, new OnMessageEventArgs(package));
+                    }
                 }
             }
         }
@@ -151,11 +157,8 @@ public class NativeTcpClient : ITcpClient
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer, true); // Clear buffer to prevent data leaks
-            if (!_disposed)
-            {
-                await DisconnectAsync();
-            }
+            ArrayPool<byte>.Shared.Return(buffer, true);
+            if (!_disposed) await DisconnectAsync();
         }
     }
 
@@ -163,7 +166,7 @@ public class NativeTcpClient : ITcpClient
     {
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(NativeTcpClient));
+            ObjectDisposedException.ThrowIf(_disposed, this);
         }
         
         if (!IsConnected || _stream == null)

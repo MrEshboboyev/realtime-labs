@@ -21,11 +21,15 @@ public class GatewayClient
         _udpClient = new NativeUdpClient();
 
         _tcpClient.OnMessageReceived += (s, e) => {
-            // e.Data emas, e.RawData ishlatiladi
-            Console.WriteLine($"[DEBUG] TCP xabar keldi, hajmi: {e.RawData.Length} byte");
-
-            // HandleServerMessage ga e.RawData ni yuboramiz
-            HandleServerMessage(s, e);
+            if (e.RawData.Length > 0)
+            {
+                Console.WriteLine($"[DEBUG] TCP xabar keldi, hajmi: {e.RawData.Length} byte");
+                HandleServerMessage(s, e);
+            }
+            else
+            {
+                Console.WriteLine("[DEBUG] Bo'sh TCP xabar keldi (0 byte) - Framing xatosi bo'lishi mumkin.");
+            }
         };
     }
 
