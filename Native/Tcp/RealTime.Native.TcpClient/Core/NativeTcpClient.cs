@@ -12,7 +12,7 @@ namespace RealTime.Native.TcpClient.Core;
 /// <summary>
 /// Implements a TCP client for connecting to the server
 /// </summary>
-public class NativeClient : ITcpClient
+public class NativeTcpClient : ITcpClient
 {
     private System.Net.Sockets.TcpClient? _client;
     private NetworkStream? _stream;
@@ -23,7 +23,7 @@ public class NativeClient : ITcpClient
     private readonly ReconnectionManager _reconnectionManager;
     private readonly SharedLogger _logger;
     
-    private readonly object _stateLock = new object();
+    private readonly Lock _stateLock = new();
     private bool _disposed = false;
 
     public Guid Id { get; private set; } = Guid.NewGuid();
@@ -36,7 +36,7 @@ public class NativeClient : ITcpClient
     public event EventHandler<OnMessageEventArgs>? OnMessageReceived;
     public event EventHandler<OnErrorEventArgs>? OnError;
 
-    public NativeClient(ClientOptions options, IFrameHandler? frameHandler = null, ISerializer? serializer = null, SharedLogger? logger = null)
+    public NativeTcpClient(ClientOptions options, IFrameHandler? frameHandler = null, ISerializer? serializer = null, SharedLogger? logger = null)
     {
         _options = options;
         _frameHandler = frameHandler ?? new LengthPrefixedFrame(logger);
@@ -159,7 +159,7 @@ public class NativeClient : ITcpClient
     {
         if (_disposed)
         {
-            throw new ObjectDisposedException(nameof(NativeClient));
+            throw new ObjectDisposedException(nameof(NativeTcpClient));
         }
         
         if (!IsConnected || _stream == null)

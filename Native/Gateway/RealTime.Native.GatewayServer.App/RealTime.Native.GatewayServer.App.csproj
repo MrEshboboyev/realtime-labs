@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\RealTime.Native.Common\RealTime.Native.Common.csproj" />
+    <ProjectReference Include="..\RealTime.Native.Gateway\RealTime.Native.Gateway.csproj" />
   </ItemGroup>
 
 </Project>

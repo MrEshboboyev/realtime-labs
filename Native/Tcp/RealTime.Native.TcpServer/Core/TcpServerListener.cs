@@ -1,10 +1,10 @@
 ﻿using RealTime.Native.Common.Infrastructure;
 using RealTime.Native.Common.Models;
 using RealTime.Native.Common.Protocols.Framing;
+using RealTime.Native.Common.Protocols.Serialization;
 using RealTime.Native.TcpServer.Abstractions;
 using System.Net;
 using System.Net.Sockets;
-using RealTime.Native.Common.Protocols.Serialization;
 
 namespace RealTime.Native.TcpServer.Core;
 
@@ -30,7 +30,12 @@ public class TcpServerListener : IServer
     public event EventHandler<Guid>? ClientDisconnected;
     public event EventHandler<TransportPackage>? MessageReceived;
 
-    public TcpServerListener(ServerOptions options, ConnectionManager? connectionManager = null, IFrameHandler? frameHandler = null, ISerializer? serializer = null, SharedLogger? logger = null)
+    public TcpServerListener(
+        ServerOptions options,
+        ConnectionManager? connectionManager = null,
+        IFrameHandler? frameHandler = null,
+        ISerializer? serializer = null, 
+        SharedLogger? logger = null)
     {
         _options = options;
         _connectionManager = connectionManager ?? new ConnectionManager(logger);
@@ -104,7 +109,7 @@ public class TcpServerListener : IServer
 
             while (connection.State == ConnectionState.Connected && !ct.IsCancellationRequested)
             {
-                int bytesRead = await stream.ReadAsync(buffer, 0, _options.ReceiveBufferSize, ct);
+                int bytesRead = await stream.ReadAsync(buffer.AsMemory(0, _options.ReceiveBufferSize), ct);
 
                 if (bytesRead == 0) break;
 

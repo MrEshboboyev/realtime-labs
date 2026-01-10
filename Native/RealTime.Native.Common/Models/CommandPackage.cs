@@ -22,5 +22,8 @@ public record CommandPackage(
     /// <summary>
     /// The name of the sender (optional)
     /// </summary>
-    string SenderName = ""
+    string SenderName = "",
+
+    // Gateway sessiyasini tanish uchun
+    Guid? SessionId = null
 );

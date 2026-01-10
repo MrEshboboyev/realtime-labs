@@ -5,6 +5,11 @@
   <Folder Name="/Native/">
     <Project Path="Native/RealTime.Native.Common/RealTime.Native.Common.csproj" />
   </Folder>
+  <Folder Name="/Native/Gateway/">
+    <Project Path="Native/Gateway/RealTime.Native.Gateway/RealTime.Native.Gateway.csproj" Id="31b2786a-6e93-4541-a170-ec8aa34d2cfd" />
+    <Project Path="Native/Gateway/RealTime.Native.GatewayClient.App/RealTime.Native.GatewayClient.App.csproj" Id="11f9d0f6-e449-4fed-a369-fd0d6ea6f35f" />
+    <Project Path="Native/Gateway/RealTime.Native.GatewayServer.App/RealTime.Native.GatewayServer.App.csproj" Id="72c38d50-9c6b-48db-a438-0a09156f829f" />
+  </Folder>
   <Folder Name="/Native/Tcp/">
     <Project Path="Native/Tcp/RealTime.Native.TcpClient/RealTime.Native.TcpClient.csproj" />
     <Project Path="Native/Tcp/RealTime.Native.TcpServer/RealTime.Native.TcpServer.csproj" />

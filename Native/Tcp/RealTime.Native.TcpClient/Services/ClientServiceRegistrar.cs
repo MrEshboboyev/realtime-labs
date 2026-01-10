@@ -20,7 +20,7 @@ public static class ClientServiceRegistrar
         var clientOptions = options ?? new ClientOptions();
         
         services.AddSingleton(clientOptions);
-        services.AddSingleton<ITcpClient, NativeClient>();
+        services.AddSingleton<ITcpClient, NativeTcpClient>();
         
         return services;
     }
