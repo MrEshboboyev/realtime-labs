@@ -15,17 +15,18 @@ public class GatewayClient
     private Guid? _sessionId; // Serverdan keladigan pasport
     public bool IsConnected => _sessionId.HasValue;
 
-    // Konstruktorda endi ClientOptions talab qilinadi
     public GatewayClient(ClientOptions options)
     {
-        // 1. TCP Clientni options bilan yaratamiz
         _tcpClient = new NativeTcpClient(options);
-
-        // 2. UDP Client (Hozircha bo'sh, ConnectAsync da host:port beriladi)
         _udpClient = new NativeUdpClient();
 
-        // Xatolik tuzatildi: OnMessageReceived event'iga ulanamiz
-        _tcpClient.OnMessageReceived += HandleServerMessage;
+        _tcpClient.OnMessageReceived += (s, e) => {
+            // e.Data emas, e.RawData ishlatiladi
+            Console.WriteLine($"[DEBUG] TCP xabar keldi, hajmi: {e.RawData.Length} byte");
+
+            // HandleServerMessage ga e.RawData ni yuboramiz
+            HandleServerMessage(s, e);
+        };
     }
 
     public async Task ConnectAsync(string host, int udpPort)
@@ -38,21 +39,16 @@ public class GatewayClient
         await _udpClient.ConnectAsync(host, udpPort);
     }
 
-    // OnMessageEventArgs turi ishlatildi
     private void HandleServerMessage(object? sender, OnMessageEventArgs e)
     {
-        // e.Data - bu byte[] (Framing-dan o'tgan toza ma'lumot)
         var command = _serializer.Deserialize<CommandPackage>(e.RawData.ToArray());
 
-        // Agar bu SYSTEM dan kelgan va ichida SessionId bo'lgan xabar bo'lsa
         if (command?.Type == CommandType.JoinRoom && command.RoomId == "SYSTEM")
         {
             if (Guid.TryParse(command.Content, out Guid sid))
             {
                 _sessionId = sid;
-                Console.WriteLine($"[GATEWAY] Handshake muvaffaqiyatli! Sessiya ID: {_sessionId}");
-
-                // Endi UDP bog'lash uchun Hello yuboramiz
+                Console.WriteLine($"[GATEWAY] Handshake muvaffaqiyatli! ID: {_sessionId}");
                 _ = SendUdpHello();
             }
         }

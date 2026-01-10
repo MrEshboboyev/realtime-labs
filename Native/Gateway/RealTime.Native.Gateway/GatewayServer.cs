@@ -25,17 +25,19 @@ public class GatewayServer
 
     public async Task StartAsync(int tcpPort, int udpPort)
     {
+        _tcpServer.ClientConnected += HandleTcpConnection;
+
         _tcpServer.ClientDisconnected += (s, connectionId) =>
         {
             var sessionKvp = _sessions.FirstOrDefault(x => x.Value is GatewaySession gs &&
-                                                       ((IConnection)typeof(GatewaySession)
-                                                       .GetField("_connection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-                                                       .GetValue(gs)!).Id == connectionId);
+                ((IConnection)typeof(GatewaySession)
+                .GetField("_connection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+                .GetValue(gs)!).Id == connectionId);
 
             if (sessionKvp.Key != Guid.Empty)
             {
                 _sessions.TryRemove(sessionKvp.Key, out _);
-                _logger.Log(LogLevel.Warning, $"Sessiya yopildi: {sessionKvp.Key}");
+                _logger.Log(LogLevel.Warning, $"Sessiya o'chirildi: {sessionKvp.Key}");
             }
         };
 

@@ -36,7 +36,11 @@ public class NativeTcpClient : ITcpClient
     public event EventHandler<OnMessageEventArgs>? OnMessageReceived;
     public event EventHandler<OnErrorEventArgs>? OnError;
 
-    public NativeTcpClient(ClientOptions options, IFrameHandler? frameHandler = null, ISerializer? serializer = null, SharedLogger? logger = null)
+    public NativeTcpClient(
+        ClientOptions options,
+        IFrameHandler? frameHandler = null,
+        ISerializer? serializer = null,
+        SharedLogger? logger = null)
     {
         _options = options;
         _frameHandler = frameHandler ?? new LengthPrefixedFrame(logger);
@@ -75,7 +79,7 @@ public class NativeTcpClient : ITcpClient
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, ct);
             using var delayCts = new CancellationTokenSource(_options.ConnectionTimeout);
             
-            var connectTask = Task.Run(() => _client.Connect(_options.Host, _options.Port));
+            var connectTask = Task.Run(() => _client.Connect(_options.Host, _options.Port), ct);
             var timeoutTask = Task.Delay(_options.ConnectionTimeout, delayCts.Token);
             
             var completedTask = await Task.WhenAny(connectTask, timeoutTask);
